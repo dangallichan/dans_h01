@@ -2,73 +2,98 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Neuroglancer Segment Filter</title>
+    <title>Neuroglancer Curator</title>
     <style>
-        body { font-family: sans-serif; max-width: 800px; margin: 20px auto; padding: 20px; line-height: 1.5; }
-        textarea { width: 100%; height: 80px; margin-bottom: 10px; border: 1px solid #ccc; border-radius: 4px; padding: 8px; }
-        .box { background: #f8f9fa; padding: 15px; border-radius: 5px; border: 1px solid #ddd; overflow-x: auto; min-height: 40px; }
-        .label { font-weight: bold; margin-top: 20px; display: block; color: #333; }
-        button { padding: 10px 20px; background: #007bff; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: bold; }
-        button:hover { background: #0056b3; }
-        .error { color: #d9534f; margin-top: 10px; font-weight: bold; }
-        .count { font-size: 0.8em; color: #666; font-weight: normal; }
+        body { font-family: -apple-system, sans-serif; max-width: 800px; margin: 40px auto; padding: 0 20px; color: #333; }
+        textarea { width: 100%; height: 100px; padding: 12px; border: 1px solid #ccc; border-radius: 6px; font-family: monospace; }
+        .controls { margin: 20px 0; display: flex; gap: 10px; }
+        button { padding: 10px 20px; border: none; border-radius: 4px; cursor: pointer; font-weight: 600; }
+        #processBtn { background: #24292e; color: white; }
+        #downloadBtn { background: #2da44e; color: white; display: none; }
+        .error { color: #cf222e; background: #ffebe9; padding: 12px; border-radius: 6px; display: none; margin-bottom: 20px; }
+        pre { background: #f6f8fa; padding: 16px; border-radius: 6px; overflow: auto; border: 1px solid #d0d7de; font-size: 12px; }
+        .status { font-size: 0.9em; color: #666; margin-bottom: 10px; }
     </style>
 </head>
 <body>
 
-    <h2>Neuroglancer Segment Filter</h2>
-    <textarea id="urlInput" placeholder="Paste Neuroglancer URL here..."></textarea>
-    <button onclick="extractAndFilter()">Filter & Extract Layer 2</button>
-    <div id="error" class="error"></div>
+    <h2>Neuroglancer Segment Merger</h2>
+    <div id="errorBox" class="error"></div>
+    
+    <div class="status" id="loadStatus">Status: Ready to fetch local .jsonl</div>
 
-    <span class="label">Filtered Segments <span id="segCount" class="count"></span>:</span>
-    <div id="segmentOutput" class="box">No data yet...</div>
+    <textarea id="urlInput" placeholder="Paste Neuroglancer URL (#!...)"></textarea>
 
-    <span class="label">Full JSON State:</span>
-    <pre id="fullOutput" class="box" style="font-size: 11px; white-space: pre;">Waiting for input...</pre>
+    <div class="controls">
+        <button id="processBtn" onclick="processData()">Match & Update</button>
+        <button id="downloadBtn" onclick="downloadFile()">Download New JSONL</button>
+    </div>
+
+    <h3>Updated Record Preview:</h3>
+    <pre id="resultOutput">No data processed yet.</pre>
 
     <script>
-        function extractAndFilter() {
-            const input = document.getElementById('urlInput').value.trim();
-            const segOutput = document.getElementById('segmentOutput');
-            const fullOutput = document.getElementById('fullOutput');
-            const errorDiv = document.getElementById('error');
-            const segCount = document.getElementById('segCount');
+        let updatedLines = [];
+
+        async function processData() {
+            const urlInput = document.getElementById('urlInput').value.trim();
+            const resultOutput = document.getElementById('resultOutput');
+            const errorBox = document.getElementById('errorBox');
+            const status = document.getElementById('loadStatus');
+
+            errorBox.style.display = "none";
             
-            errorDiv.textContent = "";
-            segCount.textContent = "";
-
             try {
-                // 1. Decode URL Fragment
-                const hashIndex = input.indexOf('#!');
-                if (hashIndex === -1) throw new Error("URL must contain '#!'");
+                // 1. Parse URL State
+                const hashIndex = urlInput.indexOf('#!');
+                if (hashIndex === -1) throw new Error("Invalid URL: Missing '#!' fragment.");
+                const decoded = decodeURIComponent(urlInput.substring(hashIndex + 2));
+                const activeSegments = JSON.parse(decoded).layers[1].segments
+                    .map(s => String(s)).filter(s => !s.startsWith('!'));
+
+                // 2. Fetch the JSONL file from the same repo/folder
+                status.textContent = "Status: Fetching merged_df_DG.jsonl...";
+                const response = await fetch('merged_df_DG.jsonl');
+                if (!response.ok) throw new Error("Could not find merged_df_DG.jsonl in the repository.");
                 
-                const decoded = decodeURIComponent(input.substring(hashIndex + 2));
-                const json = JSON.parse(decoded);
+                const fileText = await response.text();
+                const jsonlObjects = fileText.split('\n').filter(l => l.trim()).map(l => JSON.parse(l));
 
-                // 2. Access Layer 2
-                if (!json.layers || json.layers.length < 2) {
-                    throw new Error("The URL does not contain at least two layers.");
-                }
+                // 3. Find unique match
+                let matchIndex = -1;
+                let foundC3Id = null;
 
-                const segments = json.layers[1].segments || [];
+                jsonlObjects.forEach((obj, index) => {
+                    if (activeSegments.includes(String(obj.c3_id))) {
+                        if (matchIndex !== -1) throw new Error("Ambiguity: Multiple rows match the segments.");
+                        matchIndex = index;
+                        foundC3Id = String(obj.c3_id);
+                    }
+                });
 
-                if (Array.isArray(segments)) {
-                    // 3. Filter out segments starting with '!'
-                    const filtered = segments.filter(s => !String(s).startsWith('!'));
-                    
-                    segOutput.textContent = filtered.length > 0 ? filtered.join(", ") : "No active segments found.";
-                    segCount.textContent = `(${filtered.length} active segments displayed)`;
-                } else {
-                    segOutput.textContent = "Segments key found, but it is not an array.";
-                }
+                if (matchIndex === -1) throw new Error("No c3_id in the file matches active URL segments.");
 
-                fullOutput.textContent = JSON.stringify(json, null, 4);
+                // 4. Merge
+                jsonlObjects[matchIndex]['DG_extraManualSegs'] = activeSegments.filter(s => s !== foundC3Id);
+                updatedLines = jsonlObjects.map(obj => JSON.stringify(obj));
                 
+                resultOutput.textContent = JSON.stringify(jsonlObjects[matchIndex], null, 4);
+                document.getElementById('downloadBtn').style.display = "inline-block";
+                status.textContent = "Status: Success!";
+
             } catch (err) {
-                errorDiv.textContent = "Error: " + err.message;
-                segOutput.textContent = "---";
+                errorBox.textContent = err.message;
+                errorBox.style.display = "block";
+                status.textContent = "Status: Error.";
             }
+        }
+
+        function downloadFile() {
+            const blob = new Blob([updatedLines.join('\n')], { type: 'text/plain' });
+            const a = document.createElement('a');
+            a.href = URL.createObjectURL(blob);
+            a.download = 'merged_df_DG.jsonl'; // Matches original name for easy overwrite
+            a.click();
         }
     </script>
 </body>
