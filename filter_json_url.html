@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Neuroglancer Segment Filter</title>
+    <style>
+        body { font-family: sans-serif; max-width: 800px; margin: 20px auto; padding: 20px; line-height: 1.5; }
+        textarea { width: 100%; height: 80px; margin-bottom: 10px; border: 1px solid #ccc; border-radius: 4px; padding: 8px; }
+        .box { background: #f8f9fa; padding: 15px; border-radius: 5px; border: 1px solid #ddd; overflow-x: auto; min-height: 40px; }
+        .label { font-weight: bold; margin-top: 20px; display: block; color: #333; }
+        button { padding: 10px 20px; background: #007bff; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: bold; }
+        button:hover { background: #0056b3; }
+        .error { color: #d9534f; margin-top: 10px; font-weight: bold; }
+        .count { font-size: 0.8em; color: #666; font-weight: normal; }
+    </style>
+</head>
+<body>
+
+    <h2>Neuroglancer Segment Filter</h2>
+    <textarea id="urlInput" placeholder="Paste Neuroglancer URL here..."></textarea>
+    <button onclick="extractAndFilter()">Filter & Extract Layer 2</button>
+    <div id="error" class="error"></div>
+
+    <span class="label">Filtered Segments <span id="segCount" class="count"></span>:</span>
+    <div id="segmentOutput" class="box">No data yet...</div>
+
+    <span class="label">Full JSON State:</span>
+    <pre id="fullOutput" class="box" style="font-size: 11px; white-space: pre;">Waiting for input...</pre>
+
+    <script>
+        function extractAndFilter() {
+            const input = document.getElementById('urlInput').value.trim();
+            const segOutput = document.getElementById('segmentOutput');
+            const fullOutput = document.getElementById('fullOutput');
+            const errorDiv = document.getElementById('error');
+            const segCount = document.getElementById('segCount');
+            
+            errorDiv.textContent = "";
+            segCount.textContent = "";
+
+            try {
+                // 1. Decode URL Fragment
+                const hashIndex = input.indexOf('#!');
+                if (hashIndex === -1) throw new Error("URL must contain '#!'");
+                
+                const decoded = decodeURIComponent(input.substring(hashIndex + 2));
+                const json = JSON.parse(decoded);
+
+                // 2. Access Layer 2
+                if (!json.layers || json.layers.length < 2) {
+                    throw new Error("The URL does not contain at least two layers.");
+                }
+
+                const segments = json.layers[1].segments || [];
+
+                if (Array.isArray(segments)) {
+                    // 3. Filter out segments starting with '!'
+                    const filtered = segments.filter(s => !String(s).startsWith('!'));
+                    
+                    segOutput.textContent = filtered.length > 0 ? filtered.join(", ") : "No active segments found.";
+                    segCount.textContent = `(${filtered.length} active segments displayed)`;
+                } else {
+                    segOutput.textContent = "Segments key found, but it is not an array.";
+                }
+
+                fullOutput.textContent = JSON.stringify(json, null, 4);
+                
+            } catch (err) {
+                errorDiv.textContent = "Error: " + err.message;
+                segOutput.textContent = "---";
+            }
+        }
+    </script>
+</body>
+</html>
