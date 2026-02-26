@@ -1,26 +1,45 @@
-- name: Update line via Python
-        shell: python
+on:
+  issues:
+    types: [opened]
+
+jobs:
+  update-file:
+    if: contains(github.event.issue.title, 'Update JSONL Line')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Update line via Python
+              shell: python
+              run: |
+                import os, json
+
+                target_id = os.getenv('TARGET_ID')
+                new_line_raw = os.getenv('NEW_CONTENT')
+                file_path = 'data.jsonl'
+                temp_path = 'data.jsonl.tmp'
+
+                with open(file_path, 'r') as f_in, open(temp_path, 'w') as f_out:
+                    for line in f_in:
+                        try:
+                            data = json.loads(line)
+                            # Check if this line matches the c3_id
+                            if str(data.get('c3_id')) == target_id:
+                                f_out.write(new_line_raw + '\n')
+                            else:
+                                f_out.write(line)
+                        except json.JSONDecodeError:
+                            f_out.write(line)
+
+                os.replace(temp_path, file_path)
+              env:
+                TARGET_ID: ${{ github.event.issue.data.c3_id }}
+                NEW_CONTENT: ${{ github.event.issue.data.new_content }}
+          
+      - name: Commit change
         run: |
-          import os, json
+          git config user.name "GitHub Action"
+          git config user.email "actions@github.com"
+          git add data.jsonl
+          git commit -m "Update entry $ID"
+          git push
 
-          target_id = os.getenv('TARGET_ID')
-          new_line_raw = os.getenv('NEW_CONTENT')
-          file_path = 'data.jsonl'
-          temp_path = 'data.jsonl.tmp'
-
-          with open(file_path, 'r') as f_in, open(temp_path, 'w') as f_out:
-              for line in f_in:
-                  try:
-                      data = json.loads(line)
-                      # Check if this line matches the c3_id
-                      if str(data.get('c3_id')) == target_id:
-                          f_out.write(new_line_raw + '\n')
-                      else:
-                          f_out.write(line)
-                  except json.JSONDecodeError:
-                      f_out.write(line)
-
-          os.replace(temp_path, file_path)
-        env:
-          TARGET_ID: ${{ github.event.issue.data.c3_id }}
-          NEW_CONTENT: ${{ github.event.issue.data.new_content }}
