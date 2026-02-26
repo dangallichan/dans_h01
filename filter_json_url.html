@@ -2,46 +2,56 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Neuroglancer Curator</title>
+    <title>Neuroglancer Line Updater</title>
     <style>
         body { font-family: -apple-system, sans-serif; max-width: 800px; margin: 40px auto; padding: 0 20px; color: #333; }
-        textarea { width: 100%; height: 100px; padding: 12px; border: 1px solid #ccc; border-radius: 6px; font-family: monospace; }
-        .controls { margin: 20px 0; display: flex; gap: 10px; }
-        button { padding: 10px 20px; border: none; border-radius: 4px; cursor: pointer; font-weight: 600; }
-        #processBtn { background: #24292e; color: white; }
-        #downloadBtn { background: #2da44e; color: white; display: none; }
-        .error { color: #cf222e; background: #ffebe9; padding: 12px; border-radius: 6px; display: none; margin-bottom: 20px; }
-        pre { background: #f6f8fa; padding: 16px; border-radius: 6px; overflow: auto; border: 1px solid #d0d7de; font-size: 12px; }
-        .status { font-size: 0.9em; color: #666; margin-bottom: 10px; }
+        textarea { width: 100%; height: 80px; padding: 12px; border: 1px solid #ccc; border-radius: 6px; font-family: monospace; margin-bottom: 10px; }
+        .controls { margin-bottom: 20px; }
+        button { padding: 10px 20px; border: none; border-radius: 4px; cursor: pointer; font-weight: 600; background: #24292e; color: white; }
+        button:hover { background: #444; }
+        #copyBtn { background: #0969da; display: none; margin-left: 10px; }
+        .error { color: #cf222e; background: #ffebe9; padding: 12px; border-radius: 6px; display: none; margin-bottom: 20px; border: 1px solid #d0d7de; }
+        .output-container { margin-top: 20px; }
+        .label { font-weight: bold; display: block; margin-bottom: 8px; font-size: 0.9em; color: #555; }
+        #singleLineOutput { 
+            background: #f6f8fa; 
+            padding: 12px; 
+            border-radius: 6px; 
+            border: 1px solid #d0d7de; 
+            font-family: monospace; 
+            word-break: break-all; 
+            font-size: 13px;
+            min-height: 1.5em;
+        }
     </style>
 </head>
 <body>
 
-    <h2>Neuroglancer Segment Merger</h2>
+    <h2>Neuroglancer Line Generator</h2>
     <div id="errorBox" class="error"></div>
     
-    <div class="status" id="loadStatus">Status: Ready to fetch local .jsonl</div>
-
-    <textarea id="urlInput" placeholder="Paste Neuroglancer URL (#!...)"></textarea>
+    <label class="label">Paste Neuroglancer URL:</label>
+    <textarea id="urlInput" placeholder="https://neuroglancer...#!{...}"></textarea>
 
     <div class="controls">
-        <button id="processBtn" onclick="processData()">Match & Update</button>
-        <button id="downloadBtn" onclick="downloadFile()">Download New JSONL</button>
+        <button onclick="processLine()">Generate Updated Line</button>
+        <button id="copyBtn" onclick="copyToClipboard()">Copy to Clipboard</button>
     </div>
 
-    <h3>Updated Record Preview:</h3>
-    <pre id="resultOutput">No data processed yet.</pre>
+    <div class="output-container">
+        <label class="label">Single Line JSON (for GitHub Issue):</label>
+        <div id="singleLineOutput">Awaiting processing...</div>
+    </div>
 
     <script>
-        let updatedLines = [];
-
-        async function processData() {
+        async function processLine() {
             const urlInput = document.getElementById('urlInput').value.trim();
-            const resultOutput = document.getElementById('resultOutput');
+            const output = document.getElementById('singleLineOutput');
             const errorBox = document.getElementById('errorBox');
-            const status = document.getElementById('loadStatus');
+            const copyBtn = document.getElementById('copyBtn');
 
             errorBox.style.display = "none";
+            copyBtn.style.display = "none";
             
             try {
                 // 1. Parse URL State
@@ -51,49 +61,50 @@
                 const activeSegments = JSON.parse(decoded).layers[1].segments
                     .map(s => String(s)).filter(s => !s.startsWith('!'));
 
-                // 2. Fetch the JSONL file from the same repo/folder
-                status.textContent = "Status: Fetching merged_df_DG.jsonl...";
+                // 2. Fetch the JSONL file
                 const response = await fetch('merged_df_DG.jsonl');
-                if (!response.ok) throw new Error("Could not find merged_df_DG.jsonl in the repository.");
+                if (!response.ok) throw new Error("Could not find 'merged_df_DG.jsonl'.");
                 
                 const fileText = await response.text();
                 const jsonlObjects = fileText.split('\n').filter(l => l.trim()).map(l => JSON.parse(l));
 
-                // 3. Find unique match
-                let matchIndex = -1;
+                // 3. Match unique c3_id
+                let matchedObj = null;
                 let foundC3Id = null;
 
-                jsonlObjects.forEach((obj, index) => {
-                    if (activeSegments.includes(String(obj.c3_id))) {
-                        if (matchIndex !== -1) throw new Error("Ambiguity: Multiple rows match the segments.");
-                        matchIndex = index;
-                        foundC3Id = String(obj.c3_id);
+                for (const obj of jsonlObjects) {
+                    const currentId = String(obj.c3_id);
+                    if (activeSegments.includes(currentId)) {
+                        if (matchedObj) throw new Error("Ambiguity: Multiple rows match these segments.");
+                        matchedObj = obj;
+                        foundC3Id = currentId;
                     }
-                });
+                }
 
-                if (matchIndex === -1) throw new Error("No c3_id in the file matches active URL segments.");
+                if (!matchedObj) throw new Error("No matching c3_id found in the data.");
 
-                // 4. Merge
-                jsonlObjects[matchIndex]['DG_extraManualSegs'] = activeSegments.filter(s => s !== foundC3Id);
-                updatedLines = jsonlObjects.map(obj => JSON.stringify(obj));
+                // 4. Create the modified single line
+                matchedObj['DG_extraManualSegs'] = activeSegments.filter(s => s !== foundC3Id);
                 
-                resultOutput.textContent = JSON.stringify(jsonlObjects[matchIndex], null, 4);
-                document.getElementById('downloadBtn').style.display = "inline-block";
-                status.textContent = "Status: Success!";
+                const resultLine = JSON.stringify(matchedObj);
+                output.textContent = resultLine;
+                copyBtn.style.display = "inline-block";
 
             } catch (err) {
                 errorBox.textContent = err.message;
                 errorBox.style.display = "block";
-                status.textContent = "Status: Error.";
+                output.textContent = "Error occurred.";
             }
         }
 
-        function downloadFile() {
-            const blob = new Blob([updatedLines.join('\n')], { type: 'text/plain' });
-            const a = document.createElement('a');
-            a.href = URL.createObjectURL(blob);
-            a.download = 'merged_df_DG.jsonl'; // Matches original name for easy overwrite
-            a.click();
+        function copyToClipboard() {
+            const text = document.getElementById('singleLineOutput').textContent;
+            navigator.clipboard.writeText(text).then(() => {
+                const btn = document.getElementById('copyBtn');
+                const originalText = btn.textContent;
+                btn.textContent = "Copied!";
+                setTimeout(() => btn.textContent = originalText, 2000);
+            });
         }
     </script>
 </body>
