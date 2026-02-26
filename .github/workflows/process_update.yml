@@ -24,11 +24,13 @@ jobs:
             core.setOutput('new_content', new_content);
 
       - name: Update line via Python
+        id: update_script
         shell: python
         run: |
-          import os, json
+          import os, json, sys
           target_id = os.getenv('TARGET_ID')
           new_line_raw = os.getenv('NEW_CONTENT')
+          found = False
           
           with open('merged_df_DG.jsonl', 'r') as f_in, open('merged_df_DG.jsonl.tmp', 'w') as f_out:
               for line in f_in:
@@ -36,10 +38,16 @@ jobs:
                       data = json.loads(line)
                       if str(data.get('c3_id')) == target_id:
                           f_out.write(new_line_raw + '\n')
+                          found = True
                       else:
                           f_out.write(line)
                   except:
                       f_out.write(line)
+          
+          if not found:
+              print(f"Error: c3_id {target_id} not found.")
+              sys.exit(1) # This fails the step
+          
           os.replace('merged_df_DG.jsonl.tmp', 'merged_df_DG.jsonl')
         env:
           TARGET_ID: ${{ steps.parse.outputs.c3_id }}
@@ -52,3 +60,28 @@ jobs:
           git add merged_df_DG.jsonl
           git commit -m "Update c3_id ${{ steps.parse.outputs.c3_id }}"
           git push
+
+      - name: Handle Failure
+        if: failure()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body: '❌ **Update Failed:** The `c3_id` you provided was not found in the file. Please check the ID and try again.'
+            })
+
+      - name: Close Issue on Success
+        if: success()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            github.rest.issues.update({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              state: 'closed',
+              body: '✅ **Success:** The file has been updated and a Pull Request has been created. Closing this issue.'
+            })
