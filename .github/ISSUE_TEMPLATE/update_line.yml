@@ -1,18 +1,14 @@
 name: Update JSONL Line
 title: "[Update JSONL Line]: " 
-description: Paste a new line to replace an existing one in the data file.
+description: Paste one or more new lines to replace existing ones in the data file. c3_id will be extracted automatically from each line.
 body:
-  - type: input
-    id: c3_id
-    attributes:
-      label: Target c3_id
-      description: The c3_id of the line you want to replace.
-    validations:
-      required: true
   - type: textarea
     id: new_content
     attributes:
-      label: New JSON Line
-      description: Paste the full new JSON line here.
+      label: New JSON Line(s)
+      description: Paste one or more complete JSON lines here. The c3_id will be extracted automatically from each line.
+      placeholder: |
+        {"c3_id": 123, "field1": "value1", ...}
+        {"c3_id": 456, "field1": "value2", ...}
     validations:
       required: true

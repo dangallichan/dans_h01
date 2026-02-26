@@ -301,6 +301,7 @@
                                     // Mark row as modified
                                     const row = cell.getRow();
                                     row.getElement().style.backgroundColor = "#fff3cd";
+                                    row.getElement().setAttribute("data-modified", "true");
                                 };
                             }
              
@@ -363,8 +364,12 @@
 
         // Function to download modified data as JSONL
         function downloadModifiedData() {
-            const data = window.table.getData();
-            const jsonlContent = data.map(row => JSON.stringify(row)).join('\n');
+            const modifiedRows = window.table.getRows().filter(row => {
+                return row.getElement().getAttribute("data-modified") === "true";
+            });
+            
+            const modifiedData = modifiedRows.map(row => row.getData());
+            const jsonlContent = modifiedData.map(row => JSON.stringify(row)).join('\n');
             
             const blob = new Blob([jsonlContent], { type: 'application/jsonl' });
             const url = URL.createObjectURL(blob);

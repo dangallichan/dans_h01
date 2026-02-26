@@ -16,49 +16,101 @@ jobs:
         with:
           script: |
             const body = context.payload.issue.body;
-            // This regex pulls the data from the rendered issue body
-            const c3_id = body.match(/### Target c3_id\s*\n*(.*)/)?.[1]?.trim();
-            const new_content = body.match(/### New JSON Line\s*\n*([\s\S]*?)(?=\n###|$)/)?.[1]?.trim();
+            // Extract the JSON content from the textarea
+            const jsonSection = body.match(/### New JSON Line\(s\)\s*\n*([\s\S]*?)(?=\n###|$)/)?.[1]?.trim();
             
-            core.setOutput('c3_id', c3_id);
-            core.setOutput('new_content', new_content);
+            if (!jsonSection) {
+              core.setFailed('Could not find JSON content in issue body');
+              return;
+            }
+            
+            const updates = [];
+            const lines = jsonSection.split('\n').filter(line => line.trim());
+            
+            for (const line of lines) {
+              try {
+                const jsonData = JSON.parse(line);
+                const c3_id = jsonData.c3_id;
+                
+                if (!c3_id) {
+                  core.setFailed(`Missing c3_id in JSON line: ${line}`);
+                  return;
+                }
+                
+                updates.push({
+                  c3_id: String(c3_id),
+                  new_content: line
+                });
+              } catch (e) {
+                core.setFailed(`Invalid JSON line: ${line}`);
+                return;
+              }
+            }
+            
+            core.setOutput('updates_json', JSON.stringify(updates));
 
       - name: Update line via Python
         id: update_script
         shell: python
         run: |
           import os, json, sys
-          target_id = os.getenv('TARGET_ID')
-          new_line_raw = os.getenv('NEW_CONTENT')
-          found = False
+          updates_json = os.getenv('UPDATES_JSON')
+          updates = json.loads(updates_json)
+          
+          if not updates:
+              print("Error: No updates provided.")
+              sys.exit(1)
+          
+          not_found = []
           
           with open('merged_df_DG.jsonl', 'r') as f_in, open('merged_df_DG.jsonl.tmp', 'w') as f_out:
               for line in f_in:
                   try:
                       data = json.loads(line)
-                      if str(data.get('c3_id')) == target_id:
-                          f_out.write(new_line_raw + '\n')
-                          found = True
-                      else:
+                      c3_id_str = str(data.get('c3_id'))
+                      
+                      # Check if this c3_id needs to be updated
+                      updated = False
+                      for update in updates:
+                          if c3_id_str == update['c3_id']:
+                              f_out.write(update['new_content'] + '\n')
+                              updated = True
+                              break
+                      
+                      if not updated:
                           f_out.write(line)
                   except:
                       f_out.write(line)
           
-          if not found:
-              print(f"Error: c3_id {target_id} not found.")
-              sys.exit(1) # This fails the step
+          # Check which c3_ids were not found
+          found_ids = set()
+          with open('merged_df_DG.jsonl', 'r') as f:
+              for line in f:
+                  try:
+                      data = json.loads(line)
+                      found_ids.add(str(data.get('c3_id')))
+                  except:
+                      pass
+          
+          for update in updates:
+              if update['c3_id'] not in found_ids:
+                  not_found.append(update['c3_id'])
+          
+          if not_found:
+              print(f"Error: The following c3_ids were not found: {', '.join(not_found)}")
+              sys.exit(1)
           
           os.replace('merged_df_DG.jsonl.tmp', 'merged_df_DG.jsonl')
+          print(f"Successfully updated {len(updates)} record(s)")
         env:
-          TARGET_ID: ${{ steps.parse.outputs.c3_id }}
-          NEW_CONTENT: ${{ steps.parse.outputs.new_content }}
+          UPDATES_JSON: ${{ steps.parse.outputs.updates_json }}
 
       - name: Commit change
         run: |
           git config user.name "GitHub Action"
           git config user.email "actions@github.com"
           git add merged_df_DG.jsonl
-          git commit -m "Update c3_id ${{ steps.parse.outputs.c3_id }}"
+          git commit -m "Update multiple records from issue #${{ github.event.issue.number }}"
           git push
 
       - name: Handle Failure
