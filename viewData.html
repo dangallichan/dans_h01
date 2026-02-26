@@ -1,35 +1,209 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Interactive Data Explorer</title>
+    
     <link href="https://unpkg.com/tabulator-tables/dist/css/tabulator.min.css" rel="stylesheet">
     <script type="text/javascript" src="https://unpkg.com/tabulator-tables/dist/js/tabulator.min.js"></script>
+
+    <style>
+        body { font-family: sans-serif; padding: 20px; background-color: #f8f9fa; }
+        #controls { background: white; padding: 15px; border-radius: 8px; border: 1px solid #ddd; margin-bottom: 20px; }
+        #column-selector { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 10px; }
+        #data-table { width: 100%; background-color: #fff; border: 1px solid #ccc; }
+
+        /* Horizontal Header Styling */
+        .tabulator-col-content {
+            padding: 6px 4px !important;
+        }
+        .tabulator-col-title {
+            writing-mode: horizontal-tb;
+            transform: none;
+            white-space: normal;
+            line-height: 1.1;
+            margin: 0 !important;
+            padding: 0 !important;
+            font-size: 13px;
+            text-align: center;
+        }
+        /* Keep filters horizontal */
+        .tabulator-header-filter {
+            writing-mode: horizontal-tb;
+            transform: none;
+            margin-top: 6px;
+        }
+        .tabulator-header-filter input {
+            width: 100%;
+            box-sizing: border-box;
+            min-height: 24px;
+            font-size: 12px;
+        }
+        .tabulator-header-filter select {
+            width: 100%;
+            box-sizing: border-box;
+            min-height: 24px;
+            font-size: 12px;
+        }
+        button { cursor: pointer; padding: 8px 12px; border-radius: 4px; border: 1px solid #007bff; background: #007bff; color: white; margin-bottom: 10px; }
+        label { font-size: 12px; display: flex; align-items: center; cursor: pointer; }
+    </style>
 </head>
 <body>
-    <h2>Interactive Data Table</h2>
+
+    <h2>h01 Data Explorer</h2>
+    <div id="controls">
+        <button onclick="window.table.clearHeaderFilter()">Clear All Filters</button>
+        <div><strong>Toggle Columns:</strong></div>
+        <div id="column-selector"></div>
+    </div>
     <div id="data-table"></div>
 
     <script>
-        async function loadData() {
-            // 1. Fetch the JSONL file from your GitHub Pages URL
-            const response = await fetch('https://dangallichan.github.io/dans_h01/merged_df_DG.jsonl');
-            const text = await response.text();
+        async function initTable() {
+            try {
+                const response = await fetch('https://dangallichan.github.io/dans_h01/merged_df_DG.jsonl');
+                const text = await response.text();
+                const jsonData = text.trim().split('\n').map(line => JSON.parse(line));
 
-            // 2. Parse JSONL to a JavaScript Array
-            const jsonData = text.trim().split('\n').map(line => JSON.parse(line));
+                const getUniqueValues = (fieldName) => {
+                    return [...new Set(
+                        jsonData
+                            .map(row => row[fieldName])
+                            .filter(value => value !== null && value !== undefined && value !== "")
+                    )].sort((a, b) => String(a).localeCompare(String(b)));
+                };
 
-            // 3. Initialize the Interactive Table
-            new Tabulator("#data-table", {
-                data: jsonData,
-                autoColumns: true, // Automatically creates columns based on JSON keys
-                layout: "fitColumns",
-                pagination: "local",
-                paginationSize: 10,
-                movableColumns: true,
-                initialSort: [{column: "id", dir: "asc"}], // Optional default sort
-            });
+                const getUniqueValueMap = (fieldName) => {
+                    const valueMap = {"": "All"};
+                    getUniqueValues(fieldName).forEach(value => {
+                        valueMap[String(value)] = String(value);
+                    });
+                    return valueMap;
+                };
+
+                const selectHeaderFilter = (cell, onRendered, success, cancel, editorParams) => {
+                    const select = document.createElement("select");
+                    const values = editorParams && editorParams.values ? editorParams.values : {"": "All"};
+
+                    Object.entries(values).forEach(([value, label]) => {
+                        const option = document.createElement("option");
+                        option.value = value;
+                        option.textContent = label;
+                        select.appendChild(option);
+                    });
+
+                    onRendered(() => {
+                        select.style.width = "100%";
+                    });
+
+                    select.addEventListener("change", () => success(select.value));
+                    select.addEventListener("blur", () => cancel());
+                    return select;
+                };
+
+                // Short display labels for long column names
+                const columnAliases = {
+                    c2_rep_strict: "C2 Strict",
+                    c2_rep_manual: "C2 Manual",
+                    c3_rep_strict: "C3 Strict",
+                    c3_rep_manual: "C3 Manual",
+                    num_axon: "NAx",
+                    num_dendrite: "NDen",
+                    num_astrocyte: "NAst",
+                    num_soma: "NSom",
+                    num_cilium: "NCil",
+                    num_ais: "Nais",                    
+                    num_myelinated_axon: "NMy",
+                    num_myelin_internal: "NMyInt",
+                    num_spine: "NSp",
+                    num_incoming_excitatory: "NInExc",
+                    num_incoming_inhibitory: "NInInh",
+                    num_outgoing_excitatory: "NOutExc",
+                    num_outgoing_inhibitory: "NOutInh",
+                    DG_extraManualSegs: "DGExtra"
+
+                };
+
+                const getDisplayName = (fieldName, fallbackTitle) => {
+                    return columnAliases[fieldName] || fallbackTitle || fieldName;
+                };
+
+                window.table = new Tabulator("#data-table", {
+                    data: jsonData,
+                    layout: "fitColumns",
+                    pagination: "local",
+                    paginationSize: 40,
+                    autoColumns: true,
+                    autoColumnsDefinitions: function(definitions) {
+                        definitions.forEach((column) => {
+                            // Standard settings for all columns
+                            column.headerHozAlign = "center";
+                            column.hozAlign = "center";
+                            column.title = getDisplayName(column.field, column.title);
+
+                            if (column.field === "c3_id") {
+                                column.width = 100; // Much wider for descriptions
+                            }
+             
+                            if (column.field === "layer") {
+                                column.width = 80;
+                            }
+
+                            column.headerFilter = "input";
+                            column.headerFilterPlaceholder = "Filter...";
+
+                            // Specific logic for 'celltype'
+                            if (String(column.field).toLowerCase() === "celltype") {
+                                column.headerFilter = selectHeaderFilter;
+                                column.headerFilterParams = {
+                                    values: getUniqueValueMap(column.field)
+                                };
+                                column.headerFilterFunc = "=";
+                                column.width = 150; // Ensure width for dropdown
+                            }
+
+
+                            // Example: Make another specific column wider
+                            if (column.field === "some_other_column") {
+                                column.width = 200;
+                            }
+                        });
+                        return definitions;
+                    },
+                });
+
+                // Build Column Selector
+                window.table.on("tableBuilt", function(){
+                    const selector = document.getElementById("column-selector");
+                    const hiddenByDefault = ['x','y','z','c2_rep_strict','c2_rep_manual','c3_rep_strict','c3_rep']; // Add field names here to hide on load
+
+                    window.table.getColumns().forEach(column => {
+                        const colDef = column.getDefinition();
+                        const fieldName = colDef.field;
+
+                        if (hiddenByDefault.includes(fieldName)) column.hide();
+
+                        const label = document.createElement("label");
+                        const checkbox = document.createElement("input");
+                        checkbox.type = "checkbox";
+                        checkbox.checked = !hiddenByDefault.includes(fieldName);
+                        checkbox.style.marginRight = "5px";
+                        checkbox.addEventListener("change", () => column.toggle());
+
+                        label.appendChild(checkbox);
+                        label.appendChild(document.createTextNode(getDisplayName(fieldName, colDef.title)));
+                        selector.appendChild(label);
+                    });
+                });
+
+            } catch (error) {
+                console.error("Error:", error);
+                document.getElementById('data-table').innerHTML = "Error loading data.";
+            }
         }
-
-        loadData();
+        initTable();
     </script>
 </body>
 </html>
