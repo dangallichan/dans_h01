@@ -55,6 +55,7 @@
     <h2>h01 Data Explorer</h2>
     <div id="controls">
         <button onclick="window.table.clearHeaderFilter()">Clear All Filters</button>
+        <button onclick="downloadModifiedData()">Download Modified JSONL</button>
         <div><strong>Toggle Columns:</strong></div>
         <div id="column-selector"></div>
     </div>
@@ -130,6 +131,143 @@
                     return columnAliases[fieldName] || fallbackTitle || fieldName;
                 };
 
+                // Function to generate Neuroglancer URL
+                const generateNeuroglancerUrl = (c3_id, extraSegs) => {
+                    const baseState = {
+                        "dimensions": {"x": [8e-09, "m"], "y": [8e-09, "m"], "z": [3.3e-08, "m"]},
+                        "crossSectionScale": 2.101435114458722,
+                        "projectionOrientation": [-0.10608936846256256, 0.22380776703357697, 0.043751541525125504, 0.9678537845611572],
+                        "projectionScale": 142678.19767561049,
+                        "layers": [
+                            {"type": "image", "source": "precomputed://gs://h01-release/data/20210601/4nm_raw", "tab": "source", "name": "4nm EM"},
+                            {
+                                "type": "segmentation",
+                                "source": {
+                                    "url": "precomputed://gs://h01-release/data/20210601/c3",
+                                    "subsources": {"default": true, "bounds": true, "properties": true, "mesh": true},
+                                    "enableDefaultSubsources": false
+                                },
+                                "panels": [{"flex": 1.31, "size": 511, "tab": "segments"}],
+                                "segments": [],
+                                "segmentQuery": "",
+                                "colorSeed": 4270253886,
+                                "name": "c3 segmentation"
+                            },
+                            {
+                            "type": "annotation",
+                            "source": "precomputed://gs://h01-release/data/20210729/c3/synapses/precomputed",
+                            "tab": "source",
+                            "ignoreNullSegmentFilter": false,
+                            "shader": "void main() {\n  if (prop_type() == uint(1)) {\n    setColor(vec3(0.,0.,1.));\n  } else {\n    setColor(vec3(1.,1.,0.));\n  }\n  \n  setEndpointMarkerBorderWidth(0.0);\n  setEndpointMarkerSize(4.0);\n}\n",
+                            "linkedSegmentationLayer": {
+                                "post_synaptic_cell": "c3 segmentation"
+                            },
+                            "filterBySegmentation": [
+                                "post_synaptic_cell"
+                            ],
+                            "name": "synapse annotations",
+                            "visible": false
+                            },
+                            {
+                            "type": "annotation",
+                            "source": "precomputed://gs://h01-release/data/20210601/c3/subcompartments/annotations",
+                            "tab": "rendering",
+                            "ignoreNullSegmentFilter": false,
+                            "shader": "void main() {\n  setPointMarkerBorderWidth(0.);\n  setPointMarkerSize(3.);\n  switch (prop_class_label()) {\n  case 0:  // axon\n    setColor(vec3(0, 0, 1));\n    break;\n  case 1:  // dendrite\n    discard;\n    setColor(vec3(1, 0, 0));\n    break;\n  case 2:  // astrocyte\n    setColor(vec3(0, 1, 0));\n    break;\n  case 3:  // soma\n    setColor(vec3(1, 1, 1));\n    break;\n  case 4:  // cilium\n    setColor(vec3(0.5, 0.5, 0));\n    break;\n  case 5:  // AIS\n    setColor(vec3(0.5, 0.5, 1));\n    break;\n    \n  case 1000:  // myelinated axon\n  case 1001:\n    setColor(vec3(1, 0.25, 0.75));\n    break;\n  case 1004:  // fragments\n  case 1005:\n  default:\n    discard;\n  }\n}",
+                            "linkedSegmentationLayer": {
+                                "skeleton_id": "c3 segmentation"
+                            },
+                            "filterBySegmentation": [
+                                "skeleton_id"
+                            ],
+                            "name": "subcompartment annotations"
+                            },
+                            {
+                            "type": "annotation",
+                            "source": "precomputed://gs://h01-release/data/20210601/c3/embeddings/combined_umap",
+                            "tab": "source",
+                            "shader": "void main() {\n  setColor(vec3(\n    1.0 - (prop_ue0()   4.6017108) / 18.7, \n    1.0 - (prop_ue1()   0.13594195 )/ 9.28, \n    (prop_ue2() - 6.69197893) / 7.59)); \n  setPointMarkerBorderColor(vec3(\n    1.0 - (prop_ue0()   4.6017108) / 18.7, \n    1.0 - (prop_ue1()   0.13594195 )/ 9.28, \n    (prop_ue2() - 6.69197893) / 7.59)); \n  setPointMarkerSize(5.0);\n  setPointMarkerBorderWidth(0.);\n}",
+                            "linkedSegmentationLayer": {
+                                "skeleton_id": "c3 segmentation"
+                            },
+                            "filterBySegmentation": [
+                                "skeleton_id"
+                            ],
+                            "name": "embeddings",
+                            "archived": true
+                            },
+                            {
+                            "type": "annotation",
+                            "source": "precomputed://gs://h01-release/data/20210601/c3/subcompartments/annotations/ais",
+                            "tab": "source",
+                            "projectionAnnotationSpacing": 0.14324743353719752,
+                            "shader": "void main() {\n  switch (prop_class_label()) {\n  case 0:  // axon\n    setColor(vec3(0, 0, 1));\n    break;\n  case 1:  // dendrite\n    setColor(vec3(1, 0, 0));\n    break;\n  case 2:  // astrocyte\n    setColor(vec3(0, 1, 0));\n    break;\n  case 3:  // soma\n    setColor(vec3(1, 1, 1));\n    break;\n  case 4:  // cilium\n    setColor(vec3(0.5, 0.5, 0));\n    break;\n  case 5:  // AIS\n    setColor(vec3(0.5, 0.5, 1));\n    break;\n    \n  case 1000:  // myelinated axon\n  case 1001:\n    setColor(vec3(1, 0.25, 0.75));\n    break;\n  case 1004:  // fragments\n  case 1005:\n  default:\n    discard;\n  }\n}",
+                            "name": "AIS annotations",
+                            "archived": true
+                            },
+                            {
+                            "type": "segmentation",
+                            "source": "precomputed://gs://h01-release/data/20210601/c3/subcompartments",
+                            "tab": "source",
+                            "segments": [],
+                            "segmentColors": {
+                                "100": "#0000ff",
+                                "101": "#ff0000",
+                                "102": "#00ff00",
+                                "103": "#ffffff",
+                                "104": "#7f7f00",
+                                "105": "#7f7fff",
+                                "1100": "#ff3fbf",
+                                "1101": "#ff3fbf",
+                                "1102": "#000000",
+                                "1103": "#000000",
+                                "1104": "#ff3fbf",
+                                "1105": "#ff3fbf"
+                            },
+                            "name": "subcompartments render",
+                            "archived": true
+                            },
+                            {
+                            "type": "segmentation",
+                            "source": "precomputed://gs://h01-release/data/20210601/layers",
+                            "tab": "rendering",
+                            "selectedAlpha": 0.3,
+                            "objectAlpha": 0.19,
+                            "segments": [
+                                "1",
+                                "2",
+                                "3",
+                                "4",
+                                "5",
+                                "6",
+                                "7"
+                            ],
+                            "segmentQuery": "1,2,3,4,5,6,7",
+                            "name": "cortical layers"
+                            }
+                        ],
+                        "showDefaultAnnotations": false,
+                        "showSlices": false,
+                        "prefetch": false,
+                        "layout": {"type": "3d", "orthographicProjection": true}
+                    };
+                    
+                    // Collect all segment IDs
+                    const segmentIds = [c3_id.toString()];
+                    if (extraSegs && extraSegs.trim() !== "") {
+                        const extraIds = extraSegs.split(',').map(id => id.trim()).filter(id => id !== "");
+                        segmentIds.push(...extraIds);
+                    }
+                    
+                    // Update the segments and segmentQuery
+                    baseState.layers[1].segments = segmentIds;
+                    baseState.layers[1].segmentQuery = segmentIds.join(',');
+                    
+                    const stateJson = JSON.stringify(baseState);
+                    const encodedState = encodeURIComponent(stateJson);
+                    return `https://neuroglancer-demo.appspot.com/#!${encodedState}`;
+                };
+
                 window.table = new Tabulator("#data-table", {
                     data: jsonData,
                     layout: "fitColumns",
@@ -144,7 +282,26 @@
                             column.title = getDisplayName(column.field, column.title);
 
                             if (column.field === "c3_id") {
-                                column.width = 100; // Much wider for descriptions
+                                column.width = 100;
+                                // Make c3_id a clickable hyperlink
+                                column.formatter = function(cell, formatterParams, onRendered) {
+                                    const rowData = cell.getRow().getData();
+                                    const c3_id = cell.getValue();
+                                    const extraSegs = rowData.DG_extraManualSegs || "";
+                                    const url = generateNeuroglancerUrl(c3_id, extraSegs);
+                                    return `<a href="${url}" target="_blank" style="color: #007bff; text-decoration: underline;">${c3_id}</a>`;
+                                };
+                            }
+
+                            // Make DG_labels editable
+                            if (column.field === "DG_labels") {
+                                column.editor = "input";
+                                column.width = 150;
+                                column.cellEdited = function(cell) {
+                                    // Mark row as modified
+                                    const row = cell.getRow();
+                                    row.getElement().style.backgroundColor = "#fff3cd";
+                                };
                             }
              
                             if (column.field === "layer") {
@@ -203,6 +360,23 @@
                 document.getElementById('data-table').innerHTML = "Error loading data.";
             }
         }
+
+        // Function to download modified data as JSONL
+        function downloadModifiedData() {
+            const data = window.table.getData();
+            const jsonlContent = data.map(row => JSON.stringify(row)).join('\n');
+            
+            const blob = new Blob([jsonlContent], { type: 'application/jsonl' });
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = 'merged_df_DG_modified.jsonl';
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            URL.revokeObjectURL(url);
+        }
+
         initTable();
     </script>
 </body>
