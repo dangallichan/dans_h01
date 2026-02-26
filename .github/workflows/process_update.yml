@@ -1,3 +1,4 @@
+name: Update JSONL Line
 on:
   issues:
     types: [opened]
@@ -8,38 +9,46 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
+      - name: Extract Form Data
+        id: parse
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const body = context.payload.issue.body;
+            // This regex pulls the data from the rendered issue body
+            const c3_id = body.match(/### Target c3_id\s*\n*(.*)/)?.[1]?.trim();
+            const new_content = body.match(/### New JSON Line\s*\n*([\s\S]*?)(?=\n###|$)/)?.[1]?.trim();
+            
+            core.setOutput('c3_id', c3_id);
+            core.setOutput('new_content', new_content);
+
       - name: Update line via Python
-              shell: python
-              run: |
-                import os, json
-
-                target_id = os.getenv('TARGET_ID')
-                new_line_raw = os.getenv('NEW_CONTENT')
-                file_path = 'data.jsonl'
-                temp_path = 'data.jsonl.tmp'
-
-                with open(file_path, 'r') as f_in, open(temp_path, 'w') as f_out:
-                    for line in f_in:
-                        try:
-                            data = json.loads(line)
-                            # Check if this line matches the c3_id
-                            if str(data.get('c3_id')) == target_id:
-                                f_out.write(new_line_raw + '\n')
-                            else:
-                                f_out.write(line)
-                        except json.JSONDecodeError:
-                            f_out.write(line)
-
-                os.replace(temp_path, file_path)
-              env:
-                TARGET_ID: ${{ github.event.issue.data.c3_id }}
-                NEW_CONTENT: ${{ github.event.issue.data.new_content }}
+        shell: python
+        run: |
+          import os, json
+          target_id = os.getenv('TARGET_ID')
+          new_line_raw = os.getenv('NEW_CONTENT')
           
+          with open('data.jsonl', 'r') as f_in, open('data.jsonl.tmp', 'w') as f_out:
+              for line in f_in:
+                  try:
+                      data = json.loads(line)
+                      if str(data.get('c3_id')) == target_id:
+                          f_out.write(new_line_raw + '\n')
+                      else:
+                          f_out.write(line)
+                  except:
+                      f_out.write(line)
+          os.replace('data.jsonl.tmp', 'data.jsonl')
+        env:
+          TARGET_ID: ${{ steps.parse.outputs.c3_id }}
+          NEW_CONTENT: ${{ steps.parse.outputs.new_content }}
+
       - name: Commit change
         run: |
           git config user.name "GitHub Action"
           git config user.email "actions@github.com"
           git add data.jsonl
-          git commit -m "Update entry $ID"
+          git commit -m "Update c3_id ${{ steps.parse.outputs.c3_id }}"
           git push
-
