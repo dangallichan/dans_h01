@@ -1,0 +1,26 @@
+- name: Update line via Python
+        shell: python
+        run: |
+          import os, json
+
+          target_id = os.getenv('TARGET_ID')
+          new_line_raw = os.getenv('NEW_CONTENT')
+          file_path = 'data.jsonl'
+          temp_path = 'data.jsonl.tmp'
+
+          with open(file_path, 'r') as f_in, open(temp_path, 'w') as f_out:
+              for line in f_in:
+                  try:
+                      data = json.loads(line)
+                      # Check if this line matches the c3_id
+                      if str(data.get('c3_id')) == target_id:
+                          f_out.write(new_line_raw + '\n')
+                      else:
+                          f_out.write(line)
+                  except json.JSONDecodeError:
+                      f_out.write(line)
+
+          os.replace(temp_path, file_path)
+        env:
+          TARGET_ID: ${{ github.event.issue.data.c3_id }}
+          NEW_CONTENT: ${{ github.event.issue.data.new_content }}

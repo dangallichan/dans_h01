@@ -1,0 +1,17 @@
+name: Update JSONL Line
+description: Paste a new line to replace an existing one in the data file.
+body:
+  - type: input
+    id: c3_id
+    attributes:
+      label: Targe c3_id
+      description: The c3_id of the line you want to replace.
+    validations:
+      required: true
+  - type: textarea
+    id: new_content
+    attributes:
+      label: New JSON Line
+      description: Paste the full new JSON line here.
+    validations:
+      required: true
