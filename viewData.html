@@ -11,8 +11,13 @@
     <style>
         body { font-family: sans-serif; padding: 20px; background-color: #f8f9fa; }
         #controls { background: white; padding: 15px; border-radius: 8px; border: 1px solid #ddd; margin-bottom: 20px; }
+        #quick-filters { margin: 8px 0 10px; }
+        #row-count { margin: 4px 0 10px; font-size: 12px; color: #333; }
         #column-selector { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 10px; }
         #data-table { width: 100%; background-color: #fff; border: 1px solid #ccc; }
+        #jsonl-output-container { margin-top: 16px; background: #fff; border: 1px solid #ddd; border-radius: 8px; padding: 12px; }
+        #jsonl-output-container h3 { margin: 0 0 8px; font-size: 14px; }
+        #jsonl-output { margin: 0; white-space: pre-wrap; word-break: break-word; font-family: Consolas, "Courier New", monospace; font-size: 12px; max-height: 260px; overflow: auto; background: #f8f9fa; border: 1px solid #e0e0e0; border-radius: 4px; padding: 10px; }
 
         /* Horizontal Header Styling */
         .tabulator-col-content {
@@ -27,6 +32,12 @@
             padding: 0 !important;
             font-size: 13px;
             text-align: center;
+        }
+        .tabulator-col-sorter {
+            margin-left: 6px;
+            font-size: 14px;
+            line-height: 1;
+            opacity: 0.9;
         }
         /* Keep filters horizontal */
         .tabulator-header-filter {
@@ -46,7 +57,12 @@
             min-height: 24px;
             font-size: 12px;
         }
-        button { cursor: pointer; padding: 8px 12px; border-radius: 4px; border: 1px solid #007bff; background: #007bff; color: white; margin-bottom: 10px; }
+        #controls button { cursor: pointer; padding: 8px 12px; border-radius: 4px; border: 1px solid #007bff; background: #007bff; color: white; margin-bottom: 10px; }
+        .tabulator-footer .tabulator-page,
+        .tabulator-footer .tabulator-page:disabled,
+        .tabulator-footer .tabulator-page.active {
+            color: #000 !important;
+        }
         label { font-size: 12px; display: flex; align-items: center; cursor: pointer; }
     </style>
 </head>
@@ -54,14 +70,40 @@
 
     <h2>h01 Data Explorer</h2>
     <div id="controls">
-        <button onclick="window.table.clearHeaderFilter()">Clear All Filters</button>
-        <button onclick="downloadModifiedData()">Download Modified JSONL</button>
+        <button onclick="clearAllFilters()">Clear All Filters</button>
+        <button onclick="copyModifiedDataToClipboard()">Copy Modified JSONL</button>
+        <div id="quick-filters">
+            <label>
+                <input type="checkbox" id="proofread-104-nonempty-toggle" style="margin-right: 6px;">
+                Only show rows where proofread_104_rep is not empty
+            </label>
+        </div>
+        <div id="row-count">Rows shown: 0 / 0</div>
         <div><strong>Toggle Columns:</strong></div>
         <div id="column-selector"></div>
     </div>
     <div id="data-table"></div>
+    <div id="jsonl-output-container">
+        <h3>Modified JSONL Output</h3>
+        <pre id="jsonl-output">No modified rows yet.</pre>
+    </div>
 
     <script>
+        function refreshRowCount() {
+            const rowCountElement = document.getElementById("row-count");
+            if (!rowCountElement || !window.table) return;
+
+            const filteredTotal = window.table.getData("active").length;
+            const allTotal = window.table.getData("all").length;
+            const pageSize = Number(window.table.getPageSize()) || 1;
+            const currentPage = Number(window.table.getPage()) || 1;
+
+            const startRow = filteredTotal === 0 ? 0 : ((currentPage - 1) * pageSize) + 1;
+            const endRow = filteredTotal === 0 ? 0 : Math.min(currentPage * pageSize, filteredTotal);
+
+            rowCountElement.textContent = `Rows shown: ${filteredTotal} / ${allTotal} (Page ${startRow}-${endRow})`;
+        }
+
         async function initTable() {
             try {
                 const response = await fetch('https://dangallichan.github.io/dans_h01/merged_df_DG.jsonl');
@@ -123,7 +165,8 @@
                     num_incoming_inhibitory: "NInInh",
                     num_outgoing_excitatory: "NOutExc",
                     num_outgoing_inhibitory: "NOutInh",
-                    DG_extraManualSegs: "DGExtra"
+                    DG_extraManualSegs: "DGExtra",
+                    proofread_104_rep: "Proof104",
 
                 };
 
@@ -131,8 +174,17 @@
                     return columnAliases[fieldName] || fallbackTitle || fieldName;
                 };
 
+                const minColumnWidth = 60;
+
                 // Function to generate Neuroglancer URL
                 const generateNeuroglancerUrl = (c3_id, extraSegs) => {
+                    const primarySegmentId = (c3_id === null || c3_id === undefined) ? "" : String(c3_id).trim();
+                    if (!primarySegmentId) {
+                        return "";
+                    }
+
+                    const extraSegsText = (extraSegs === null || extraSegs === undefined) ? "" : String(extraSegs);
+
                     const baseState = {
                         "dimensions": {"x": [8e-09, "m"], "y": [8e-09, "m"], "z": [3.3e-08, "m"]},
                         "crossSectionScale": 2.101435114458722,
@@ -275,9 +327,9 @@
                     };
                     
                     // Collect all segment IDs
-                    const segmentIds = [c3_id.toString()];
-                    if (extraSegs && extraSegs.trim() !== "") {
-                        const extraIds = extraSegs.split(',').map(id => id.trim()).filter(id => id !== "");
+                    const segmentIds = [primarySegmentId];
+                    if (extraSegsText.trim() !== "") {
+                        const extraIds = extraSegsText.split(',').map(id => id.trim()).filter(id => id !== "");
                         segmentIds.push(...extraIds);
                     }
                     
@@ -293,8 +345,16 @@
                 window.table = new Tabulator("#data-table", {
                     data: jsonData,
                     layout: "fitColumns",
+                    columnDefaults: {
+                        minWidth: minColumnWidth
+                    },
                     pagination: "local",
                     paginationSize: 40,
+                    headerSortElement: function(column, dir) {
+                        if (dir === "asc") return " ▲";
+                        if (dir === "desc") return " ▼";
+                        return " ⇅";
+                    },
                     autoColumns: true,
                     autoColumnsDefinitions: function(definitions) {
                         definitions.forEach((column) => {
@@ -307,11 +367,23 @@
                                 column.width = 100;
                                 // Make c3_id a clickable hyperlink
                                 column.formatter = function(cell, formatterParams, onRendered) {
-                                    const rowData = cell.getRow().getData();
+                                    try {
+                                        const rowData = cell.getRow().getData() || {};
                                     const c3_id = cell.getValue();
-                                    const extraSegs = rowData.DG_extraManualSegs || "";
+                                        const c3IdText = (c3_id === null || c3_id === undefined) ? "" : String(c3_id).trim();
+                                        if (!c3IdText) {
+                                            return "";
+                                        }
+                                        const extraSegs = rowData.DG_extraManualSegs;
                                     const url = generateNeuroglancerUrl(c3_id, extraSegs);
-                                    return `<a href="${url}" target="_blank" style="color: #007bff; text-decoration: underline;">${c3_id}</a>`;
+                                        if (!url) {
+                                            return c3IdText;
+                                        }
+                                        return `<a href="${url}" target="_blank" style="color: #007bff; text-decoration: underline;">${c3IdText}</a>`;
+                                    } catch (error) {
+                                        const fallback = cell.getValue();
+                                        return (fallback === null || fallback === undefined) ? "" : String(fallback);
+                                    }
                                 };
                             }
 
@@ -324,15 +396,28 @@
                                     const row = cell.getRow();
                                     row.getElement().style.backgroundColor = "#fff3cd";
                                     row.getElement().setAttribute("data-modified", "true");
+                                    updateModifiedJsonlOutput();
                                 };
                             }
              
                             if (column.field === "layer") {
                                 column.width = 80;
                             }
+                            if (column.field === "num_myelinated_axon") {
+                                column.width = 80;
+                            }
+                            if (column.field === "num_axon") {
+                                column.width = 80;
+                            }
+                            if (column.field === "proofread_104_rep") {
+                                column.width = 100;
+                            }
 
+                            if (column.field === "DG_labels" || column.field === "layer" || column.field === "c3_id" || column.field === "proofread_104_rep") {
                             column.headerFilter = "input";
                             column.headerFilterPlaceholder = "Filter...";
+                            }
+                          
 
                             // Specific logic for 'celltype'
                             if (String(column.field).toLowerCase() === "celltype") {
@@ -354,10 +439,33 @@
                     },
                 });
 
+                const proofreadNotEmptyFilter = (data) => {
+                    const value = data.proofread_104_rep;
+                    return value !== null && value !== undefined && String(value).trim() !== "";
+                };
+
+                const proofreadToggle = document.getElementById("proofread-104-nonempty-toggle");
+                if (proofreadToggle) {
+                    proofreadToggle.addEventListener("change", (event) => {
+                        window.table.removeFilter(proofreadNotEmptyFilter);
+                        if (event.target.checked) {
+                            window.table.addFilter(proofreadNotEmptyFilter);
+                        }
+                        refreshRowCount();
+                    });
+                }
+
+                window.table.on("tableBuilt", refreshRowCount);
+                window.table.on("dataFiltered", refreshRowCount);
+                window.table.on("dataSorted", refreshRowCount);
+                window.table.on("pageLoaded", refreshRowCount);
+                refreshRowCount();
+                updateModifiedJsonlOutput();
+
                 // Build Column Selector
                 window.table.on("tableBuilt", function(){
                     const selector = document.getElementById("column-selector");
-                    const hiddenByDefault = ['x','y','z','c2_rep_strict','c2_rep_manual','c3_rep_strict','c3_rep']; // Add field names here to hide on load
+                    const hiddenByDefault = ['x','y','z','c2_rep_strict','c2_rep_manual','c3_rep_strict','c3_rep','soma_id','base_seg_id','c3_rep_manual']; // Add field names here to hide on load
 
                     window.table.getColumns().forEach(column => {
                         const colDef = column.getDefinition();
@@ -384,24 +492,49 @@
             }
         }
 
-        // Function to download modified data as JSONL
-        function downloadModifiedData() {
+        function clearAllFilters() {
+            if (!window.table) return;
+            window.table.clearHeaderFilter();
+            window.table.clearFilter(true);
+
+            const proofreadToggle = document.getElementById("proofread-104-nonempty-toggle");
+            if (proofreadToggle) {
+                proofreadToggle.checked = false;
+            }
+
+            refreshRowCount();
+        }
+
+        function updateModifiedJsonlOutput() {
+            const outputElement = document.getElementById("jsonl-output");
+            if (!outputElement || !window.table) return;
+
             const modifiedRows = window.table.getRows().filter(row => {
                 return row.getElement().getAttribute("data-modified") === "true";
             });
             
             const modifiedData = modifiedRows.map(row => row.getData());
             const jsonlContent = modifiedData.map(row => JSON.stringify(row)).join('\n');
-            
-            const blob = new Blob([jsonlContent], { type: 'application/jsonl' });
-            const url = URL.createObjectURL(blob);
-            const link = document.createElement('a');
-            link.href = url;
-            link.download = 'merged_df_DG_modified.jsonl';
-            document.body.appendChild(link);
-            link.click();
-            document.body.removeChild(link);
-            URL.revokeObjectURL(url);
+
+            outputElement.textContent = jsonlContent || "No modified rows yet.";
+        }
+
+        async function copyModifiedDataToClipboard() {
+            const outputElement = document.getElementById("jsonl-output");
+            if (!outputElement) return;
+
+            const textToCopy = outputElement.textContent === "No modified rows yet." ? "" : outputElement.textContent;
+
+            try {
+                await navigator.clipboard.writeText(textToCopy);
+            } catch (error) {
+                const temp = document.createElement("textarea");
+                temp.value = textToCopy;
+                document.body.appendChild(temp);
+                temp.select();
+                document.execCommand("copy");
+                document.body.removeChild(temp);
+            }
         }
 
         initTable();
