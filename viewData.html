@@ -154,6 +154,28 @@
                                 "name": "c3 segmentation"
                             },
                             {
+                            "type": "segmentation",
+                            "source": {
+                                "url": "precomputed://gs://h01-release/data/20210601/proofread_104",
+                                "subsources": {
+                                "default": true,
+                                "bounds": true,
+                                "properties": true,
+                                "mesh": true
+                                },
+                                "enableDefaultSubsources": false
+                            },
+                            "panels": [
+                                {
+                                "size": 443,
+                                "tab": "source"
+                                }
+                            ],
+                            "segments": [],
+                            "segmentQuery": ">NMy",
+                            "name": "proofread 104 cells"
+                            },
+                            {
                             "type": "annotation",
                             "source": "precomputed://gs://h01-release/data/20210729/c3/synapses/precomputed",
                             "tab": "source",
