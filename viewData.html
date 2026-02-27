@@ -459,6 +459,20 @@
                 window.table.on("dataFiltered", refreshRowCount);
                 window.table.on("dataSorted", refreshRowCount);
                 window.table.on("pageLoaded", refreshRowCount);
+                window.table.on("cellMouseEnter", function(event, cell) {
+                    const cellElement = cell.getElement();
+                    if (!cellElement) return;
+
+                    const value = cell.getValue();
+                    const text = (value === null || value === undefined) ? "" : String(value);
+                    const isTruncated = cellElement.scrollWidth > cellElement.clientWidth || cellElement.scrollHeight > cellElement.clientHeight;
+
+                    if (isTruncated && text) {
+                        cellElement.setAttribute("title", text);
+                    } else {
+                        cellElement.removeAttribute("title");
+                    }
+                });
                 refreshRowCount();
                 updateModifiedJsonlOutput();
 
